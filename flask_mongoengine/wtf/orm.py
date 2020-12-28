@@ -2,7 +2,6 @@
 Tools for generating forms based on mongoengine Document schemas.
 """
 import decimal
-import sys
 from collections import OrderedDict
 
 from bson import ObjectId
@@ -22,10 +21,6 @@ __all__ = (
     "model_fields",
     "model_form",
 )
-
-
-if sys.version_info >= (3, 0):
-    unicode = str
 
 
 def converts(*args):
@@ -61,7 +56,9 @@ class ModelConverter(object):
             kwargs.update(field_args)
 
         if kwargs["validators"]:
-            # Create a copy of the list since we will be modifying it.
+            # Create a copy of the list since we will be modifying it, and if
+            # validators set as shared list between fields - duplicates/conflicts may
+            # be created.
             kwargs["validators"] = list(kwargs["validators"])
 
         if field.required:
@@ -83,8 +80,6 @@ class ModelConverter(object):
             if radio_field:
                 return f.RadioField(**kwargs)
             return f.SelectField(**kwargs)
-
-        ftype = type(field).__name__
 
         if hasattr(field, "to_form_field"):
             return field.to_form_field(model, kwargs)
@@ -234,7 +229,7 @@ class ModelConverter(object):
             "DecimalField": decimal.Decimal,
             "ObjectIdField": ObjectId,
         }
-        return coercions.get(field_type, unicode)
+        return coercions.get(field_type, str)
 
 
 def model_fields(model, only=None, exclude=None, field_args=None, converter=None):

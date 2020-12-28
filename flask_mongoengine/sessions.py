@@ -1,5 +1,4 @@
-import datetime
-import sys
+from datetime import timedelta, datetime
 import uuid
 
 from bson.tz_util import utc
@@ -7,9 +6,6 @@ from flask.sessions import SessionInterface, SessionMixin
 from werkzeug.datastructures import CallbackDict
 
 __all__ = ("MongoEngineSession", "MongoEngineSessionInterface")
-
-if sys.version_info >= (3, 0):
-    basestring = str
 
 
 class MongoEngineSession(CallbackDict, SessionMixin):
@@ -33,8 +29,8 @@ class MongoEngineSessionInterface(SessionInterface):
         :param collection: The session collection name defaults to "session"
         """
 
-        if not isinstance(collection, basestring):
-            raise ValueError("collection argument should be string or unicode")
+        if not isinstance(collection, str):
+            raise ValueError("Collection argument should be string")
 
         class DBSession(db.Document):
             sid = db.StringField(primary_key=True)
@@ -53,12 +49,11 @@ class MongoEngineSessionInterface(SessionInterface):
 
         self.cls = DBSession
 
-    def get_expiration_time(self, app, session):
+    def get_expiration_time(self, app, session) -> timedelta:
         if session.permanent:
             return app.permanent_session_lifetime
-        if "SESSION_TTL" in app.config:
-            return datetime.timedelta(**app.config["SESSION_TTL"])
-        return datetime.timedelta(days=1)
+        # Fallback to 1 day session ttl, if SESSION_TTL not set.
+        return timedelta(**app.config.get("SESSION_TTL", {"days": 1}))
 
     def open_session(self, app, request):
         sid = request.cookies.get(app.session_cookie_name)
@@ -71,7 +66,7 @@ class MongoEngineSessionInterface(SessionInterface):
                 if not expiration.tzinfo:
                     expiration = expiration.replace(tzinfo=utc)
 
-                if expiration > datetime.datetime.utcnow().replace(tzinfo=utc):
+                if expiration > datetime.utcnow().replace(tzinfo=utc):
                     return MongoEngineSession(
                         initial=stored_session.data, sid=stored_session.sid
                     )
@@ -82,14 +77,16 @@ class MongoEngineSessionInterface(SessionInterface):
         domain = self.get_cookie_domain(app)
         httponly = self.get_cookie_httponly(app)
 
+        # If the session is modified to be empty, remove the cookie.
+        # If the session is empty, return without setting the cookie.
         if not session:
             if session.modified:
                 response.delete_cookie(app.session_cookie_name, domain=domain)
             return
 
-        expiration = datetime.datetime.utcnow().replace(
-            tzinfo=utc
-        ) + self.get_expiration_time(app, session)
+        expiration = datetime.utcnow().replace(tzinfo=utc) + self.get_expiration_time(
+            app, session
+        )
 
         if session.modified:
             self.cls(sid=session.sid, data=session, expiration=expiration).save()
